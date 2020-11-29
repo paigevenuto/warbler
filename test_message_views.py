@@ -49,6 +49,11 @@ class MessageViewTestCase(TestCase):
                                     password="testuser",
                                     image_url=None)
 
+        self.seconduser = User.signup(username="seconduser",
+                                    email="second@test.com",
+                                    password="password",
+                                    image_url=None)
+
         db.session.commit()
 
     def test_add_message(self):
@@ -71,3 +76,46 @@ class MessageViewTestCase(TestCase):
 
             msg = Message.query.one()
             self.assertEqual(msg.text, "Hello")
+
+    def test_del_message(self):
+        testuser = User.query.filter_by(username="testuser").first_or_404()
+        msg = Message(text="Hello")
+        testuser.messages.append(msg)
+        db.session.commit()
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser.id
+            messages = Message.query.all()
+            message = Message.query.one()
+            self.assertEqual(len(messages), 1)
+            resp = c.post(f"/messages/{message.id}/delete")
+            messages = Message.query.all()
+            self.assertEqual(len(messages), 0)
+
+    def test_anon_add_message(self):
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess.clear()
+            resp = c.post("/messages/new", data={"text": "Hello"}, follow_redirects=True)
+            html = resp.get_data(as_text=True)
+            self.assertIn("Access unauthorized.", html)
+            messages = Message.query.all()
+            self.assertEqual(len(messages), 0)
+
+    
+    def test_anon_del_message(self):
+        testuser = User.query.filter_by(username="testuser").first_or_404()
+        msg = Message(text="Hello")
+        testuser.messages.append(msg)
+        db.session.commit()
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess.clear()
+            messages = Message.query.all()
+            message = Message.query.one()
+            self.assertEqual(len(messages), 1)
+            resp = c.post(f"/messages/{message.id}/delete", follow_redirects=True)
+            html = resp.get_data(as_text=True)
+            self.assertIn("Access unauthorized.", html)
+            messages = Message.query.all()
+            self.assertEqual(len(messages), 1)
